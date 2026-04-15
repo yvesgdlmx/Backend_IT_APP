@@ -17,11 +17,16 @@ const includeDispositivos = [
 
 const resolverAsignacion = async ({ cuentaPadreId, cuentaHijaId }) => {
   if (cuentaPadreId && cuentaHijaId) {
-    throw new Error("Un dispositivo no puede asignarse a cuenta padre y cuenta hija al mismo tiempo.");
+    throw new Error(
+      "Un dispositivo no puede asignarse a cuenta padre y cuenta hija al mismo tiempo.",
+    );
   }
 
   if (!cuentaPadreId && !cuentaHijaId) {
-    throw new Error("Debes asignar el dispositivo a una cuenta padre o a una cuenta hija.");
+    return {
+      cuentaPadreId: null,
+      cuentaHijaId: null,
+    };
   }
 
   if (cuentaHijaId) {
