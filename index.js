@@ -8,6 +8,7 @@ import CuentasHijas from "./models/CuentasHijas.js";
 import Dispositivos from "./models/Dispositivos.js";
 import cuentaRoutes from "./routes/cuentaRoutes.js";
 import dispositivoRoutes from "./routes/dispositivoRoutes.js";
+import credencialesRoutes from "./routes/credencialesRoutes.js"
 
 dotenv.config();
 
@@ -86,6 +87,7 @@ conectarDB();
 
 app.use("/api/cuentas", cuentaRoutes);
 app.use("/api/dispositivos", dispositivoRoutes);
+app.use("/api/credenciales", credencialesRoutes);
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
