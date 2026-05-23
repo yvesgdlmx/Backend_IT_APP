@@ -1,16 +1,31 @@
 import express from "express";
 import dotenv from "dotenv";
 import cors from "cors";
+import bcrypt from "bcryptjs";
+import path from "path";
+import { fileURLToPath } from "url";
 import db from "./config/db.js";
 
 import CuentasPadres from "./models/CuentasPadres.js";
 import CuentasHijas from "./models/CuentasHijas.js";
 import Dispositivos from "./models/Dispositivos.js";
+import Usuario from "./models/Usuario.js";
+import ConfiguracionSeguridad from "./models/ConfiguracionSeguridad.js";
+import EspacioTrabajo from "./models/EspacioTrabajo.js";
+import Licencia from "./models/Licencia.js";
 import cuentaRoutes from "./routes/cuentaRoutes.js";
 import dispositivoRoutes from "./routes/dispositivoRoutes.js";
 import credencialesRoutes from "./routes/credencialesRoutes.js"
+import authRoutes from "./routes/authRoutes.js";
+import espacioTrabajoRoutes from "./routes/espacioTrabajoRoutes.js";
+import usuarioRoutes from "./routes/usuarioRoutes.js";
+import licenciaRoutes from "./routes/licenciaRoutes.js";
+import { proteger } from "./middleware/authMiddleware.js";
 
 dotenv.config();
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 CuentasPadres.hasMany(CuentasHijas, {
   as: "hijas",
@@ -45,11 +60,31 @@ Dispositivos.belongsTo(CuentasPadres, {
   foreignKey: "cuentaPadreId",
 });
 
+Usuario.hasMany(EspacioTrabajo, {
+  as: "espaciosTrabajo",
+  foreignKey: "usuarioId",
+  onDelete: "CASCADE",
+});
+
+EspacioTrabajo.belongsTo(Usuario, {
+  as: "usuario",
+  foreignKey: "usuarioId",
+});
+
 const app = express();
 app.use(express.json());
+app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
 const FRONTEND = process.env.FRONTEND_URL;
-const whitelist = [FRONTEND];
+const whitelist = [
+  FRONTEND,
+  ...(process.env.FRONTEND_URLS || "")
+    .split(",")
+    .map((url) => url.trim())
+    .filter(Boolean),
+  "http://localhost:5173",
+  "http://localhost:5174",
+].filter(Boolean);
 
 const corsOptions = {
   origin: (origin, callback) => {
@@ -64,7 +99,7 @@ const corsOptions = {
   },
   allowedHeaders: ["Content-Type", "Authorization", "Accept", "Origin"],
   exposedHeaders: ["Authorization"],
-  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
   optionsSuccessStatus: 200,
 };
 
@@ -75,19 +110,58 @@ const conectarDB = async () => {
     await db.authenticate();
     console.log("Conexion correcta a la base de datos");
 
-    await db.sync({ alter: true });
+    const syncAlter = process.env.DB_SYNC_ALTER === "true";
+    await db.sync(syncAlter ? { alter: true } : undefined);
     console.log("Tablas sincronizadas correctamente");
+
+    await prepararSeguridadInicial();
   } catch (error) {
     console.error("Error en la base de datos:", error);
     process.exit(1);
   }
 };
 
+const prepararSeguridadInicial = async () => {
+  const adminEmail = (process.env.ADMIN_EMAIL || "admin@sistema.local").trim().toLowerCase();
+  const adminPassword = process.env.ADMIN_PASSWORD || "Admin12345!";
+  const codigo365 = process.env.CUENTAS_365_INITIAL_CODE || "123456";
+
+  const totalUsuarios = await Usuario.count();
+
+  if (totalUsuarios === 0) {
+    await Usuario.create({
+      nombre: process.env.ADMIN_NAME || "Administrador",
+      email: adminEmail,
+      password: await bcrypt.hash(adminPassword, 12),
+      rol: "admin",
+    });
+
+    console.log(`Usuario admin inicial: ${adminEmail}`);
+  }
+
+  const configuracion = await ConfiguracionSeguridad.findOne({
+    where: { clave: "cuentas365_reveal_code" },
+  });
+
+  if (!configuracion) {
+    await ConfiguracionSeguridad.create({
+      clave: "cuentas365_reveal_code",
+      valorHash: await bcrypt.hash(codigo365, 12),
+    });
+
+    console.log("Codigo inicial de visualizacion 365 configurado.");
+  }
+};
+
 conectarDB();
 
-app.use("/api/cuentas", cuentaRoutes);
-app.use("/api/dispositivos", dispositivoRoutes);
-app.use("/api/credenciales", credencialesRoutes);
+app.use("/api/auth", authRoutes);
+app.use("/api/cuentas", proteger, cuentaRoutes);
+app.use("/api/dispositivos", proteger, dispositivoRoutes);
+app.use("/api/credenciales", proteger, credencialesRoutes);
+app.use("/api/trabajo", proteger, espacioTrabajoRoutes);
+app.use("/api/usuarios", proteger, usuarioRoutes);
+app.use("/api/licencias", proteger, licenciaRoutes);
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {

@@ -1,6 +1,8 @@
 import CuentasPadres from "../models/CuentasPadres.js";
 import CuentasHijas from "../models/CuentasHijas.js";
 import Dispositivos from "../models/Dispositivos.js";
+import ConfiguracionSeguridad from "../models/ConfiguracionSeguridad.js";
+import bcrypt from "bcryptjs";
 
 const includeCuentas = [
   {
@@ -32,6 +34,36 @@ const normalizarHijas = (hijas = []) =>
     }))
     .filter((hija) => hija.correo || hija.fechaVencimiento || hija.contraseña);
 
+const validarClaveRevelado = (clave = "") => {
+  if (!clave) {
+    return { ok: false, status: 400, error: "Ingresa el codigo de autorizacion." };
+  }
+
+  return ConfiguracionSeguridad.findOne({
+    where: { clave: "cuentas365_reveal_code" },
+  }).then(async (configuracion) => {
+    if (!configuracion) {
+      return {
+        ok: false,
+        status: 503,
+        error: "Configura el codigo de visualizacion desde Configuracion.",
+      };
+    }
+
+    const codigoValido = await bcrypt.compare(clave, configuracion.valorHash);
+
+    if (!codigoValido) {
+      return {
+        ok: false,
+        status: 401,
+        error: "El codigo de autorizacion no es correcto.",
+      };
+    }
+
+    return { ok: true };
+  });
+};
+
 export const obtenerCuentasPadres = async (req, res) => {
   try {
     const cuentas = await CuentasPadres.findAll({
@@ -56,6 +88,28 @@ export const obtenerCuentaPadre = async (req, res) => {
     }
 
     res.json(cuenta);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+export const revelarPasswordCuenta = async (req, res) => {
+  try {
+    const { id, tipo, clave } = req.body;
+    const validacion = await validarClaveRevelado(clave);
+
+    if (!validacion.ok) {
+      return res.status(validacion.status).json({ error: validacion.error });
+    }
+
+    const Modelo = tipo === "hija" ? CuentasHijas : CuentasPadres;
+    const cuenta = await Modelo.findByPk(id);
+
+    if (!cuenta) {
+      return res.status(404).json({ error: "Cuenta no encontrada." });
+    }
+
+    res.json({ password: cuenta.contraseña });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
