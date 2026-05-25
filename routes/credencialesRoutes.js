@@ -3,12 +3,14 @@ import {
     obtenerCredenciales, 
     crearCredencial, 
     actualizarCredencial, 
-    eliminarCredencial 
+    eliminarCredencial,
+    revelarPasswordCredencial
 } from "../controllers/credencialesController.js";
 
 const router = express.Router();
 
 router.get("/", obtenerCredenciales);
+router.post("/password/revelar", revelarPasswordCredencial);
 router.post("/", crearCredencial);
 router.put("/:id", actualizarCredencial);
 router.delete("/:id", eliminarCredencial);

@@ -13,6 +13,7 @@ import Usuario from "./models/Usuario.js";
 import ConfiguracionSeguridad from "./models/ConfiguracionSeguridad.js";
 import EspacioTrabajo from "./models/EspacioTrabajo.js";
 import Licencia from "./models/Licencia.js";
+import PasswordReset from "./models/PasswordReset.js";
 import cuentaRoutes from "./routes/cuentaRoutes.js";
 import dispositivoRoutes from "./routes/dispositivoRoutes.js";
 import credencialesRoutes from "./routes/credencialesRoutes.js"
@@ -67,6 +68,17 @@ Usuario.hasMany(EspacioTrabajo, {
 });
 
 EspacioTrabajo.belongsTo(Usuario, {
+  as: "usuario",
+  foreignKey: "usuarioId",
+});
+
+Usuario.hasMany(PasswordReset, {
+  as: "recuperacionesPassword",
+  foreignKey: "usuarioId",
+  onDelete: "CASCADE",
+});
+
+PasswordReset.belongsTo(Usuario, {
   as: "usuario",
   foreignKey: "usuarioId",
 });
