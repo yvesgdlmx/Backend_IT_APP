@@ -14,6 +14,30 @@ const datosUsuario = (usuario) => ({
   rol: usuario.rol,
 });
 
+const CLAVE_CODIGO_365 = "cuentas365_reveal_code";
+const CLAVE_VERIFICACION_CODIGO_365 = "cuentas365_email_change_code";
+const MIN_CODIGO_VISUALIZACION = 4;
+const MINUTOS_VERIFICACION_CODIGO_365 = 10;
+
+const guardarCodigoVisualizacion365 = async (nuevoCodigo, usuarioId) => {
+  const valorHash = await bcrypt.hash(nuevoCodigo.trim(), 12);
+
+  const [configuracion, creado] = await ConfiguracionSeguridad.findOrCreate({
+    where: { clave: CLAVE_CODIGO_365 },
+    defaults: {
+      valorHash,
+      actualizadoPor: usuarioId,
+    },
+  });
+
+  if (!creado) {
+    await configuracion.update({
+      valorHash,
+      actualizadoPor: usuarioId,
+    });
+  }
+};
+
 export const login = async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -166,9 +190,15 @@ export const restablecerPassword = async (req, res) => {
 
 export const actualizarCodigo365 = async (req, res) => {
   try {
-    const { passwordAdmin, nuevoCodigo, confirmarCodigo } = req.body;
+    const {
+      passwordAdmin,
+      nuevoCodigo,
+      confirmarCodigo,
+      metodoAutorizacion = "password",
+      codigoCorreo,
+    } = req.body;
 
-    if (!passwordAdmin || !nuevoCodigo || !confirmarCodigo) {
+    if (!nuevoCodigo || !confirmarCodigo) {
       return res.status(400).json({ error: "Completa todos los campos." });
     }
 
@@ -176,8 +206,44 @@ export const actualizarCodigo365 = async (req, res) => {
       return res.status(400).json({ error: "La confirmacion no coincide." });
     }
 
-    if (nuevoCodigo.trim().length < 6) {
-      return res.status(400).json({ error: "El codigo debe tener al menos 6 caracteres." });
+    if (nuevoCodigo.trim().length < MIN_CODIGO_VISUALIZACION) {
+      return res.status(400).json({ error: "El codigo debe tener al menos 4 caracteres." });
+    }
+
+    if (metodoAutorizacion === "correo") {
+      if (!codigoCorreo) {
+        return res.status(400).json({ error: "Ingresa el codigo enviado por correo." });
+      }
+
+      const solicitud = await ConfiguracionSeguridad.findOne({
+        where: { clave: CLAVE_VERIFICACION_CODIGO_365 },
+      });
+
+      const venceEnMs = MINUTOS_VERIFICACION_CODIGO_365 * 60 * 1000;
+      const expiro =
+        !solicitud || Date.now() - new Date(solicitud.updatedAt).getTime() > venceEnMs;
+
+      if (expiro) {
+        return res.status(400).json({ error: "El codigo de correo expiro. Solicita uno nuevo." });
+      }
+
+      const codigoValido = await bcrypt.compare(codigoCorreo.trim(), solicitud.valorHash);
+
+      if (!codigoValido) {
+        return res.status(401).json({ error: "El codigo enviado por correo no es correcto." });
+      }
+
+      await guardarCodigoVisualizacion365(nuevoCodigo, req.usuario.id);
+      await solicitud.update({
+        valorHash: await bcrypt.hash(crypto.randomBytes(16).toString("hex"), 12),
+        actualizadoPor: req.usuario.id,
+      });
+
+      return res.json({ mensaje: "Codigo de visualizacion actualizado correctamente." });
+    }
+
+    if (!passwordAdmin) {
+      return res.status(400).json({ error: "Ingresa la contrasena del administrador." });
     }
 
     const usuario = await Usuario.findByPk(req.usuario.id);
@@ -187,10 +253,31 @@ export const actualizarCodigo365 = async (req, res) => {
       return res.status(401).json({ error: "La contrasena del administrador no es correcta." });
     }
 
-    const valorHash = await bcrypt.hash(nuevoCodigo.trim(), 12);
+    await guardarCodigoVisualizacion365(nuevoCodigo, req.usuario.id);
 
-    const [configuracion, creado] = await ConfiguracionSeguridad.findOrCreate({
-      where: { clave: "cuentas365_reveal_code" },
+    res.json({ mensaje: "Codigo de visualizacion actualizado correctamente." });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+export const solicitarCodigo365PorCorreo = async (req, res) => {
+  try {
+    const administradores = await Usuario.findAll({
+      where: { rol: "admin", activo: true },
+      attributes: ["id", "nombre", "email"],
+    });
+
+    const correosAdmin = administradores.map((admin) => admin.email).filter(Boolean);
+
+    if (!correosAdmin.length) {
+      return res.status(400).json({ error: "No hay administradores activos con correo." });
+    }
+
+    const codigo = String(crypto.randomInt(100000, 1000000));
+    const valorHash = await bcrypt.hash(codigo, 12);
+    const [solicitud, creado] = await ConfiguracionSeguridad.findOrCreate({
+      where: { clave: CLAVE_VERIFICACION_CODIGO_365 },
       defaults: {
         valorHash,
         actualizadoPor: req.usuario.id,
@@ -198,14 +285,39 @@ export const actualizarCodigo365 = async (req, res) => {
     });
 
     if (!creado) {
-      await configuracion.update({
+      await solicitud.update({
         valorHash,
         actualizadoPor: req.usuario.id,
       });
     }
 
-    res.json({ mensaje: "Codigo de visualizacion actualizado correctamente." });
+    await enviarCorreo({
+      to: correosAdmin,
+      subject: "Codigo para cambiar visualizacion 365 - TI CONTROL",
+      text: `Codigo temporal para cambiar el codigo de visualizacion 365: ${codigo}. Vence en ${MINUTOS_VERIFICACION_CODIGO_365} minutos.`,
+      html: `
+        <div style="margin:0;padding:0;background:#f4f7fb;font-family:Arial,Helvetica,sans-serif;color:#0f172a;">
+          <div style="max-width:620px;margin:0 auto;padding:32px 18px;">
+            <div style="background:#0f172a;border-radius:18px 18px 0 0;padding:26px 30px;color:#ffffff;">
+              <div style="font-size:13px;letter-spacing:0.18em;text-transform:uppercase;color:#93c5fd;">TI CONTROL</div>
+              <h1 style="margin:14px 0 0;font-size:24px;line-height:1.25;">Cambio de codigo 365</h1>
+            </div>
+            <div style="background:#ffffff;border:1px solid #e2e8f0;border-top:0;border-radius:0 0 18px 18px;padding:30px;">
+              <p style="margin:0 0 16px;font-size:15px;line-height:1.65;">Se solicito cambiar el codigo de visualizacion de contrasenas Microsoft 365.</p>
+              <p style="margin:0 0 18px;font-size:15px;line-height:1.65;">Usa este codigo temporal para autorizar el cambio:</p>
+              <div style="display:inline-block;background:#f1f5f9;border:1px solid #cbd5e1;border-radius:12px;padding:14px 18px;font-size:28px;font-weight:800;letter-spacing:0.18em;color:#0f172a;">${codigo}</div>
+              <p style="margin:22px 0 0;font-size:13px;line-height:1.6;color:#64748b;">Este codigo vence en ${MINUTOS_VERIFICACION_CODIGO_365} minutos. Si tu no solicitaste este cambio, revisa la actividad de administradores.</p>
+            </div>
+          </div>
+        </div>
+      `,
+    });
+
+    res.json({
+      mensaje: "Enviamos un codigo temporal a los correos de administradores activos.",
+    });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error("Error al enviar codigo de configuracion:", error);
+    res.status(500).json({ error: "No fue posible enviar el codigo por correo." });
   }
 };
