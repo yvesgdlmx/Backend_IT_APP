@@ -22,6 +22,7 @@ import espacioTrabajoRoutes from "./routes/espacioTrabajoRoutes.js";
 import usuarioRoutes from "./routes/usuarioRoutes.js";
 import licenciaRoutes from "./routes/licenciaRoutes.js";
 import agendaRoutes from "./routes/agendaRoutes.js";
+import mapaIpRoutes from "./routes/mapaIpRoutes.js";
 import { proteger } from "./middleware/authMiddleware.js";
 
 dotenv.config();
@@ -176,6 +177,7 @@ app.use("/api/trabajo", proteger, espacioTrabajoRoutes);
 app.use("/api/usuarios", proteger, usuarioRoutes);
 app.use("/api/licencias", proteger, licenciaRoutes);
 app.use("/api/agenda", proteger, agendaRoutes);
+app.use("/api/mapa-ip", proteger, mapaIpRoutes);
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
