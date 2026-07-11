@@ -13,6 +13,9 @@ import Usuario from "./models/Usuario.js";
 import ConfiguracionSeguridad from "./models/ConfiguracionSeguridad.js";
 import EspacioTrabajo from "./models/EspacioTrabajo.js";
 import Licencia from "./models/Licencia.js";
+import ActividadAgenda from "./models/ActividadAgenda.js";
+import RedIp from "./models/RedIp.js";
+import DireccionIp from "./models/DireccionIp.js";
 import PasswordReset from "./models/PasswordReset.js";
 import cuentaRoutes from "./routes/cuentaRoutes.js";
 import dispositivoRoutes from "./routes/dispositivoRoutes.js";
@@ -72,6 +75,22 @@ Usuario.hasMany(EspacioTrabajo, {
 EspacioTrabajo.belongsTo(Usuario, {
   as: "usuario",
   foreignKey: "usuarioId",
+});
+
+ActividadAgenda.belongsTo(Usuario, {
+  as: "usuario",
+  foreignKey: "usuarioId",
+});
+
+RedIp.hasMany(DireccionIp, {
+  as: "ips",
+  foreignKey: "redIpId",
+  onDelete: "CASCADE",
+});
+
+DireccionIp.belongsTo(RedIp, {
+  as: "red",
+  foreignKey: "redIpId",
 });
 
 Usuario.hasMany(PasswordReset, {
