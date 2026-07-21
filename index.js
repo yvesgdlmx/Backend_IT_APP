@@ -17,6 +17,7 @@ import ActividadAgenda from "./models/ActividadAgenda.js";
 import RedIp from "./models/RedIp.js";
 import DireccionIp from "./models/DireccionIp.js";
 import PasswordReset from "./models/PasswordReset.js";
+import LicenciaDispositivo from "./models/LicenciaDispositivo.js";
 import cuentaRoutes from "./routes/cuentaRoutes.js";
 import dispositivoRoutes from "./routes/dispositivoRoutes.js";
 import credencialesRoutes from "./routes/credencialesRoutes.js"
@@ -102,6 +103,28 @@ Usuario.hasMany(PasswordReset, {
 PasswordReset.belongsTo(Usuario, {
   as: "usuario",
   foreignKey: "usuarioId",
+});
+
+Licencia.hasMany(LicenciaDispositivo, {
+  as: "asignaciones",
+  foreignKey: "licenciaId",
+  onDelete: "CASCADE",
+});
+
+LicenciaDispositivo.belongsTo(Licencia, {
+  as: "licencia",
+  foreignKey: "licenciaId",
+});
+
+Dispositivos.hasMany(LicenciaDispositivo, {
+  as: "licenciasAsignadas",
+  foreignKey: "dispositivoId",
+  onDelete: "CASCADE",
+});
+
+LicenciaDispositivo.belongsTo(Dispositivos, {
+  as: "dispositivo",
+  foreignKey: "dispositivoId",
 });
 
 const app = express();
