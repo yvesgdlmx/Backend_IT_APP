@@ -1,5 +1,6 @@
 import Licencia from "../models/Licencia.js";
 import Dispositivos from "../models/Dispositivos.js";
+import LicenciaCierreMensual from "../models/LicenciaCierreMensual.js";
 import LicenciaDispositivo from "../models/LicenciaDispositivo.js";
 
 const estadosPermitidos = ["activa", "por_vencer", "vencida", "inactiva"];
@@ -50,6 +51,52 @@ const serializarLicencia = (licencia) => {
       Number(json.cantidadTotal || 0) > 0
         ? Number(((asignacionesActivas.length / Number(json.cantidadTotal)) * 100).toFixed(2))
         : 0,
+  };
+};
+
+const limpiarPeriodo = (body = {}) => {
+  const fecha = new Date();
+  const anio = Number(body.anio) || fecha.getFullYear();
+  const mes = Number(body.mes) || fecha.getMonth() + 1;
+
+  if (anio < 2000 || anio > 2100) {
+    throw new Error("El anio del cierre no es valido.");
+  }
+
+  if (mes < 1 || mes > 12) {
+    throw new Error("El mes del cierre no es valido.");
+  }
+
+  return { anio, mes };
+};
+
+const calcularResumenLicencias = async () => {
+  const licencias = await Licencia.findAll({
+    where: { estado: "activa" },
+    include: includeAsignaciones,
+  });
+
+  const serializadas = licencias.map(serializarLicencia);
+  const totalContratadas = serializadas.reduce((acc, licencia) => acc + Number(licencia.cantidadTotal || 0), 0);
+  const totalUtilizadas = serializadas.reduce((acc, licencia) => acc + Number(licencia.cantidadUsada || 0), 0);
+  const totalDisponibles = Math.max(totalContratadas - totalUtilizadas, 0);
+  const porcentajeUso =
+    totalContratadas > 0 ? Number(((totalUtilizadas / totalContratadas) * 100).toFixed(2)) : 0;
+
+  return {
+    totalContratadas,
+    totalUtilizadas,
+    totalDisponibles,
+    porcentajeUso,
+  };
+};
+
+const serializarCierre = (cierre) => {
+  const json = cierre.toJSON();
+
+  return {
+    ...json,
+    porcentajeUso: Number(json.porcentajeUso || 0),
   };
 };
 
@@ -131,6 +178,78 @@ export const eliminarLicencia = async (req, res) => {
     res.json({ mensaje: "Licencia eliminada correctamente." });
   } catch (error) {
     res.status(500).json({ error: error.message });
+  }
+};
+
+export const obtenerCierresLicencias = async (req, res) => {
+  try {
+    const anio = Number(req.query.anio);
+    const where = anio ? { anio } : {};
+
+    const cierres = await LicenciaCierreMensual.findAll({
+      where,
+      order: [
+        ["anio", "DESC"],
+        ["mes", "DESC"],
+      ],
+    });
+
+    res.json(cierres.map(serializarCierre));
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+export const previsualizarCierreLicencias = async (req, res) => {
+  try {
+    const periodo = limpiarPeriodo(req.query);
+    const resumen = await calcularResumenLicencias();
+
+    res.json({
+      ...periodo,
+      ...resumen,
+      comentario: "",
+    });
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+};
+
+export const guardarCierreLicencias = async (req, res) => {
+  try {
+    const periodo = limpiarPeriodo(req.body);
+    const usarManual = req.body.manual === true;
+    const resumen = usarManual
+      ? {
+          totalContratadas: Number(req.body.totalContratadas) || 0,
+          totalUtilizadas: Number(req.body.totalUtilizadas) || 0,
+          totalDisponibles: Number(req.body.totalDisponibles) || 0,
+          porcentajeUso: Number(req.body.porcentajeUso) || 0,
+        }
+      : await calcularResumenLicencias();
+
+    if (resumen.totalUtilizadas > resumen.totalContratadas) {
+      return res.status(400).json({ error: "Las licencias utilizadas no pueden superar las contratadas." });
+    }
+
+    const payload = {
+      ...periodo,
+      ...resumen,
+      comentario: req.body.comentario?.trim() || null,
+    };
+
+    const [cierre, creado] = await LicenciaCierreMensual.findOrCreate({
+      where: periodo,
+      defaults: payload,
+    });
+
+    if (!creado) {
+      await cierre.update(payload);
+    }
+
+    res.status(creado ? 201 : 200).json(serializarCierre(cierre));
+  } catch (error) {
+    res.status(400).json({ error: error.message });
   }
 };
 

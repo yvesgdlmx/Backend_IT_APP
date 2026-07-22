@@ -17,6 +17,7 @@ import ActividadAgenda from "./models/ActividadAgenda.js";
 import RedIp from "./models/RedIp.js";
 import DireccionIp from "./models/DireccionIp.js";
 import PasswordReset from "./models/PasswordReset.js";
+import LicenciaCierreMensual from "./models/LicenciaCierreMensual.js";
 import LicenciaDispositivo from "./models/LicenciaDispositivo.js";
 import cuentaRoutes from "./routes/cuentaRoutes.js";
 import dispositivoRoutes from "./routes/dispositivoRoutes.js";
@@ -76,6 +77,12 @@ Usuario.hasMany(EspacioTrabajo, {
 EspacioTrabajo.belongsTo(Usuario, {
   as: "usuario",
   foreignKey: "usuarioId",
+});
+
+Usuario.hasMany(ActividadAgenda, {
+  as: "actividadesAgenda",
+  foreignKey: "usuarioId",
+  onDelete: "CASCADE",
 });
 
 ActividadAgenda.belongsTo(Usuario, {
@@ -166,6 +173,8 @@ const conectarDB = async () => {
     await db.authenticate();
     console.log("Conexion correcta a la base de datos");
 
+    await prepararEsquemaMapaIp();
+
     const syncAlter = process.env.DB_SYNC_ALTER === "true";
     await db.sync(syncAlter ? { alter: true } : undefined);
     console.log("Tablas sincronizadas correctamente");
@@ -174,6 +183,32 @@ const conectarDB = async () => {
   } catch (error) {
     console.error("Error en la base de datos:", error);
     process.exit(1);
+  }
+};
+
+const prepararEsquemaMapaIp = async () => {
+  const queryInterface = db.getQueryInterface();
+
+  try {
+    const tabla = await queryInterface.describeTable("redes_ip");
+
+    if (tabla.redBase && !tabla.ipMadre) {
+      await queryInterface.renameColumn("redes_ip", "redBase", "ipMadre");
+    }
+
+    const columnasObsoletas = ["nombre", "cidr", "gateway", "vlan", "area"];
+
+    for (const columna of columnasObsoletas) {
+      const tablaActual = await queryInterface.describeTable("redes_ip");
+
+      if (tablaActual[columna]) {
+        await queryInterface.removeColumn("redes_ip", columna);
+      }
+    }
+  } catch (error) {
+    if (error?.original?.code !== "ER_NO_SUCH_TABLE") {
+      throw error;
+    }
   }
 };
 

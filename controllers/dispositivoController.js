@@ -1,6 +1,8 @@
 import Dispositivos from "../models/Dispositivos.js";
 import CuentasPadres from "../models/CuentasPadres.js";
 import CuentasHijas from "../models/CuentasHijas.js";
+import Licencia from "../models/Licencia.js";
+import LicenciaDispositivo from "../models/LicenciaDispositivo.js";
 
 const includeDispositivos = [
   {
@@ -12,6 +14,19 @@ const includeDispositivos = [
     model: CuentasHijas,
     as: "cuentaHija",
     attributes: ["id", "correo", "cuentaPadreId"],
+  },
+  {
+    model: LicenciaDispositivo,
+    as: "licenciasAsignadas",
+    where: { estado: "activa" },
+    required: false,
+    include: [
+      {
+        model: Licencia,
+        as: "licencia",
+        attributes: ["id", "nombre", "proveedor", "plan", "cantidadTotal", "estado"],
+      },
+    ],
   },
 ];
 
@@ -54,6 +69,49 @@ const resolverAsignacion = async ({ cuentaPadreId, cuentaHijaId }) => {
   };
 };
 
+const normalizarLicenciaIds = (licenciaIds = []) =>
+  [...new Set((Array.isArray(licenciaIds) ? licenciaIds : []).filter(Boolean))];
+
+const sincronizarLicenciasDispositivo = async (dispositivoId, licenciaIds = []) => {
+  const idsDeseados = normalizarLicenciaIds(licenciaIds);
+
+  const asignacionesActuales = await LicenciaDispositivo.findAll({
+    where: { dispositivoId, estado: "activa" },
+  });
+
+  const idsActuales = new Set(asignacionesActuales.map((asignacion) => asignacion.licenciaId));
+  const idsNuevos = idsDeseados.filter((id) => !idsActuales.has(id));
+  const idsRemovidos = asignacionesActuales.filter((asignacion) => !idsDeseados.includes(asignacion.licenciaId));
+
+  for (const asignacion of idsRemovidos) {
+    await asignacion.update({
+      estado: "liberada",
+      fechaLiberacion: new Date(),
+    });
+  }
+
+  for (const licenciaId of idsNuevos) {
+    const licencia = await Licencia.findByPk(licenciaId);
+
+    if (!licencia) {
+      throw new Error("Una de las licencias seleccionadas no existe.");
+    }
+
+    const asignacionesActivas = await LicenciaDispositivo.count({
+      where: { licenciaId, estado: "activa" },
+    });
+
+    if (asignacionesActivas >= Number(licencia.cantidadTotal || 0)) {
+      throw new Error(`No hay cupos disponibles para ${licencia.nombre}.`);
+    }
+
+    await LicenciaDispositivo.create({
+      licenciaId,
+      dispositivoId,
+    });
+  }
+};
+
 export const obtenerDispositivos = async (req, res) => {
   try {
     const dispositivos = await Dispositivos.findAll({
@@ -85,7 +143,7 @@ export const obtenerDispositivo = async (req, res) => {
 
 export const crearDispositivo = async (req, res) => {
   try {
-    const { marca, tipoEquipo, nombreSistema, area, usuarioActual } = req.body;
+    const { marca, tipoEquipo, nombreSistema, area, usuarioActual, licenciaIds } = req.body;
     const asignacion = await resolverAsignacion(req.body);
 
     const dispositivo = await Dispositivos.create({
@@ -96,6 +154,8 @@ export const crearDispositivo = async (req, res) => {
       usuarioActual,
       ...asignacion,
     });
+
+    await sincronizarLicenciasDispositivo(dispositivo.id, licenciaIds);
 
     const dispositivoCompleto = await Dispositivos.findByPk(dispositivo.id, {
       include: includeDispositivos,
@@ -115,7 +175,7 @@ export const actualizarDispositivo = async (req, res) => {
       return res.status(404).json({ error: "Dispositivo no encontrado." });
     }
 
-    const { marca, tipoEquipo, nombreSistema, area, usuarioActual } = req.body;
+    const { marca, tipoEquipo, nombreSistema, area, usuarioActual, licenciaIds } = req.body;
     const asignacion = await resolverAsignacion(req.body);
 
     await dispositivo.update({
@@ -126,6 +186,10 @@ export const actualizarDispositivo = async (req, res) => {
       usuarioActual,
       ...asignacion,
     });
+
+    if (Array.isArray(licenciaIds)) {
+      await sincronizarLicenciasDispositivo(dispositivo.id, licenciaIds);
+    }
 
     const dispositivoActualizado = await Dispositivos.findByPk(dispositivo.id, {
       include: includeDispositivos,
