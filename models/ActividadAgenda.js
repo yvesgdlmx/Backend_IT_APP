@@ -48,6 +48,10 @@ const ActividadAgenda = sequelize.define(
       allowNull: false,
       defaultValue: "pendiente",
     },
+    fechaRealizacion: {
+      type: DataTypes.DATEONLY,
+      allowNull: true,
+    },
     responsable: {
       type: DataTypes.STRING,
       allowNull: true,

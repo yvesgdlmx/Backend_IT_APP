@@ -4,6 +4,7 @@ import cors from "cors";
 import bcrypt from "bcryptjs";
 import path from "path";
 import { fileURLToPath } from "url";
+import { DataTypes } from "sequelize";
 import db from "./config/db.js";
 
 import CuentasPadres from "./models/CuentasPadres.js";
@@ -14,6 +15,7 @@ import ConfiguracionSeguridad from "./models/ConfiguracionSeguridad.js";
 import EspacioTrabajo from "./models/EspacioTrabajo.js";
 import Licencia from "./models/Licencia.js";
 import ActividadAgenda from "./models/ActividadAgenda.js";
+import MantenimientoCierreMensual from "./models/MantenimientoCierreMensual.js";
 import RedIp from "./models/RedIp.js";
 import DireccionIp from "./models/DireccionIp.js";
 import PasswordReset from "./models/PasswordReset.js";
@@ -86,6 +88,17 @@ Usuario.hasMany(ActividadAgenda, {
 });
 
 ActividadAgenda.belongsTo(Usuario, {
+  as: "usuario",
+  foreignKey: "usuarioId",
+});
+
+Usuario.hasMany(MantenimientoCierreMensual, {
+  as: "cierresMantenimiento",
+  foreignKey: "usuarioId",
+  onDelete: "CASCADE",
+});
+
+MantenimientoCierreMensual.belongsTo(Usuario, {
   as: "usuario",
   foreignKey: "usuarioId",
 });
@@ -177,12 +190,37 @@ const conectarDB = async () => {
 
     const syncAlter = process.env.DB_SYNC_ALTER === "true";
     await db.sync(syncAlter ? { alter: true } : undefined);
+    await prepararEsquemaAgenda();
     console.log("Tablas sincronizadas correctamente");
 
     await prepararSeguridadInicial();
   } catch (error) {
     console.error("Error en la base de datos:", error);
     process.exit(1);
+  }
+};
+
+const prepararEsquemaAgenda = async () => {
+  const queryInterface = db.getQueryInterface();
+  const tablaAgenda = ActividadAgenda.getTableName();
+
+  try {
+    const tabla = await queryInterface.describeTable(tablaAgenda);
+
+    if (!tabla.fechaRealizacion) {
+      await queryInterface.addColumn(tablaAgenda, "fechaRealizacion", {
+        type: DataTypes.DATEONLY,
+        allowNull: true,
+      });
+    }
+  } catch (error) {
+    const tablaNoExiste =
+      error?.original?.code === "ER_NO_SUCH_TABLE" ||
+      error?.message?.includes(`No description found for "${tablaAgenda}" table`);
+
+    if (!tablaNoExiste) {
+      throw error;
+    }
   }
 };
 
@@ -244,8 +282,6 @@ const prepararSeguridadInicial = async () => {
   }
 };
 
-conectarDB();
-
 app.use("/api/auth", authRoutes);
 app.use("/api/cuentas", proteger, cuentaRoutes);
 app.use("/api/dispositivos", proteger, dispositivoRoutes);
@@ -256,12 +292,19 @@ app.use("/api/licencias", proteger, licenciaRoutes);
 app.use("/api/agenda", proteger, agendaRoutes);
 app.use("/api/mapa-ip", proteger, mapaIpRoutes);
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`Servidor corriendo en el puerto ${PORT}`);
-});
-
 app.use((err, req, res, next) => {
   console.error("Error global:", err);
   res.status(500).json({ error: err.message, stack: err.stack });
 });
+
+const PORT = process.env.PORT || 3000;
+
+const iniciarServidor = async () => {
+  await conectarDB();
+
+  app.listen(PORT, () => {
+    console.log(`Servidor corriendo en el puerto ${PORT}`);
+  });
+};
+
+iniciarServidor();
