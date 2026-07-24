@@ -143,15 +143,19 @@ export const obtenerDispositivo = async (req, res) => {
 
 export const crearDispositivo = async (req, res) => {
   try {
-    const { marca, tipoEquipo, nombreSistema, area, usuarioActual, licenciaIds } = req.body;
+    const { marca, modelo, serie, tipoEquipo, nombreSistema, area, usuarioActual, estadoInventario, observaciones, licenciaIds } = req.body;
     const asignacion = await resolverAsignacion(req.body);
 
     const dispositivo = await Dispositivos.create({
       marca,
+      modelo: modelo || null,
+      serie: serie || null,
       tipoEquipo,
       nombreSistema,
       area,
-      usuarioActual,
+      usuarioActual: usuarioActual || null,
+      estadoInventario: estadoInventario || "operacion",
+      observaciones: observaciones || null,
       ...asignacion,
     });
 
@@ -175,15 +179,19 @@ export const actualizarDispositivo = async (req, res) => {
       return res.status(404).json({ error: "Dispositivo no encontrado." });
     }
 
-    const { marca, tipoEquipo, nombreSistema, area, usuarioActual, licenciaIds } = req.body;
+    const { marca, modelo, serie, tipoEquipo, nombreSistema, area, usuarioActual, estadoInventario, observaciones, licenciaIds } = req.body;
     const asignacion = await resolverAsignacion(req.body);
 
     await dispositivo.update({
       marca,
+      modelo: modelo || null,
+      serie: serie || null,
       tipoEquipo,
       nombreSistema,
       area,
-      usuarioActual,
+      usuarioActual: usuarioActual || null,
+      estadoInventario: estadoInventario || "operacion",
+      observaciones: observaciones || null,
       ...asignacion,
     });
 

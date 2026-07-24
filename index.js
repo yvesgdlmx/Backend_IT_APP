@@ -16,6 +16,11 @@ import EspacioTrabajo from "./models/EspacioTrabajo.js";
 import Licencia from "./models/Licencia.js";
 import ActividadAgenda from "./models/ActividadAgenda.js";
 import MantenimientoCierreMensual from "./models/MantenimientoCierreMensual.js";
+import Incidencia from "./models/Incidencia.js";
+import IncidenciaCierreMensual from "./models/IncidenciaCierreMensual.js";
+import SeguridadEquipoRevision from "./models/SeguridadEquipoRevision.js";
+import SeguridadEquipoCierreMensual from "./models/SeguridadEquipoCierreMensual.js";
+import InventarioEquipoCierreMensual from "./models/InventarioEquipoCierreMensual.js";
 import RedIp from "./models/RedIp.js";
 import DireccionIp from "./models/DireccionIp.js";
 import PasswordReset from "./models/PasswordReset.js";
@@ -29,6 +34,9 @@ import espacioTrabajoRoutes from "./routes/espacioTrabajoRoutes.js";
 import usuarioRoutes from "./routes/usuarioRoutes.js";
 import licenciaRoutes from "./routes/licenciaRoutes.js";
 import agendaRoutes from "./routes/agendaRoutes.js";
+import incidenciaRoutes from "./routes/incidenciaRoutes.js";
+import seguridadEquipoRoutes from "./routes/seguridadEquipoRoutes.js";
+import inventarioEquipoRoutes from "./routes/inventarioEquipoRoutes.js";
 import mapaIpRoutes from "./routes/mapaIpRoutes.js";
 import { proteger } from "./middleware/authMiddleware.js";
 
@@ -99,6 +107,72 @@ Usuario.hasMany(MantenimientoCierreMensual, {
 });
 
 MantenimientoCierreMensual.belongsTo(Usuario, {
+  as: "usuario",
+  foreignKey: "usuarioId",
+});
+
+Usuario.hasMany(Incidencia, {
+  as: "incidencias",
+  foreignKey: "usuarioId",
+  onDelete: "CASCADE",
+});
+
+Incidencia.belongsTo(Usuario, {
+  as: "usuario",
+  foreignKey: "usuarioId",
+});
+
+Usuario.hasMany(IncidenciaCierreMensual, {
+  as: "cierresIncidencias",
+  foreignKey: "usuarioId",
+  onDelete: "CASCADE",
+});
+
+IncidenciaCierreMensual.belongsTo(Usuario, {
+  as: "usuario",
+  foreignKey: "usuarioId",
+});
+
+Usuario.hasMany(SeguridadEquipoRevision, {
+  as: "revisionesSeguridadEquipos",
+  foreignKey: "usuarioId",
+  onDelete: "CASCADE",
+});
+
+SeguridadEquipoRevision.belongsTo(Usuario, {
+  as: "usuario",
+  foreignKey: "usuarioId",
+});
+
+Dispositivos.hasMany(SeguridadEquipoRevision, {
+  as: "revisionesSeguridad",
+  foreignKey: "dispositivoId",
+  onDelete: "CASCADE",
+});
+
+SeguridadEquipoRevision.belongsTo(Dispositivos, {
+  as: "dispositivo",
+  foreignKey: "dispositivoId",
+});
+
+Usuario.hasMany(SeguridadEquipoCierreMensual, {
+  as: "cierresSeguridadEquipos",
+  foreignKey: "usuarioId",
+  onDelete: "CASCADE",
+});
+
+SeguridadEquipoCierreMensual.belongsTo(Usuario, {
+  as: "usuario",
+  foreignKey: "usuarioId",
+});
+
+Usuario.hasMany(InventarioEquipoCierreMensual, {
+  as: "cierresInventarioEquipos",
+  foreignKey: "usuarioId",
+  onDelete: "CASCADE",
+});
+
+InventarioEquipoCierreMensual.belongsTo(Usuario, {
   as: "usuario",
   foreignKey: "usuarioId",
 });
@@ -191,12 +265,48 @@ const conectarDB = async () => {
     const syncAlter = process.env.DB_SYNC_ALTER === "true";
     await db.sync(syncAlter ? { alter: true } : undefined);
     await prepararEsquemaAgenda();
+    await prepararEsquemaDispositivos();
     console.log("Tablas sincronizadas correctamente");
 
     await prepararSeguridadInicial();
   } catch (error) {
     console.error("Error en la base de datos:", error);
     process.exit(1);
+  }
+};
+
+const prepararEsquemaDispositivos = async () => {
+  const queryInterface = db.getQueryInterface();
+  const tablaDispositivos = Dispositivos.getTableName();
+
+  try {
+    const tabla = await queryInterface.describeTable(tablaDispositivos);
+
+    if (!tabla.modelo) {
+      await queryInterface.addColumn(tablaDispositivos, "modelo", { type: DataTypes.STRING, allowNull: true });
+    }
+    if (!tabla.serie) {
+      await queryInterface.addColumn(tablaDispositivos, "serie", { type: DataTypes.STRING, allowNull: true });
+    }
+    if (!tabla.estadoInventario) {
+      await queryInterface.addColumn(tablaDispositivos, "estadoInventario", {
+        type: DataTypes.ENUM("operacion", "resguardo", "baja", "mantenimiento"),
+        allowNull: false,
+        defaultValue: "operacion",
+      });
+    }
+    if (!tabla.observaciones) {
+      await queryInterface.addColumn(tablaDispositivos, "observaciones", { type: DataTypes.TEXT, allowNull: true });
+    }
+    if (tabla.usuarioActual?.allowNull === false) {
+      await queryInterface.changeColumn(tablaDispositivos, "usuarioActual", { type: DataTypes.STRING, allowNull: true });
+    }
+  } catch (error) {
+    const tablaNoExiste =
+      error?.original?.code === "ER_NO_SUCH_TABLE" ||
+      error?.message?.includes(`No description found for "${tablaDispositivos}" table`);
+
+    if (!tablaNoExiste) throw error;
   }
 };
 
@@ -290,6 +400,9 @@ app.use("/api/trabajo", proteger, espacioTrabajoRoutes);
 app.use("/api/usuarios", proteger, usuarioRoutes);
 app.use("/api/licencias", proteger, licenciaRoutes);
 app.use("/api/agenda", proteger, agendaRoutes);
+app.use("/api/incidencias", proteger, incidenciaRoutes);
+app.use("/api/seguridad-equipos", proteger, seguridadEquipoRoutes);
+app.use("/api/inventario-equipos", proteger, inventarioEquipoRoutes);
 app.use("/api/mapa-ip", proteger, mapaIpRoutes);
 
 app.use((err, req, res, next) => {

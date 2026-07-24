@@ -11,6 +11,14 @@ const Dispositivos = sequelize.define('dispositivos', {
     type: DataTypes.STRING,
     allowNull: false,
   },
+  modelo: {
+    type: DataTypes.STRING,
+    allowNull: true,
+  },
+  serie: {
+    type: DataTypes.STRING,
+    allowNull: true,
+  },
   tipoEquipo: {
     type: DataTypes.STRING,
     allowNull: false,
@@ -24,7 +32,16 @@ const Dispositivos = sequelize.define('dispositivos', {
   },
   usuarioActual: {
     type: DataTypes.STRING,
+    allowNull: true,
+  },
+  estadoInventario: {
+    type: DataTypes.ENUM("operacion", "resguardo", "baja", "mantenimiento"),
     allowNull: false,
+    defaultValue: "operacion",
+  },
+  observaciones: {
+    type: DataTypes.TEXT,
+    allowNull: true,
   },
   cuentaHijaId: {
     type: DataTypes.UUID,
