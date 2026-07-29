@@ -41,39 +41,80 @@ const serializarCierre = (cierre) => ({
 });
 
 const calcularDetalleRegistrado = async () => {
-  const dispositivos = await Dispositivos.findAll({ where: { estadoInventario: "operacion" } });
-  const conteos = categorias.reduce((acc, categoria) => ({ ...acc, [categoria.id]: 0 }), {});
+  const dispositivos = await Dispositivos.findAll();
+  const conteos = categorias.reduce(
+    (acc, categoria) => ({
+      ...acc,
+      [categoria.id]: {
+        operacion: 0,
+        resguardo: 0,
+        mantenimiento: 0,
+        baja: 0,
+      },
+    }),
+    {}
+  );
 
   dispositivos.forEach((dispositivo) => {
-    conteos[categoriaDispositivo(dispositivo)] += 1;
+    const categoriaId = categoriaDispositivo(dispositivo);
+    const estado = ["operacion", "resguardo", "mantenimiento", "baja"].includes(dispositivo.estadoInventario)
+      ? dispositivo.estadoInventario
+      : "operacion";
+
+    conteos[categoriaId][estado] += 1;
   });
 
   return categorias.map((categoria) => ({
     id: categoria.id,
     nombre: categoria.nombre,
-    registrados: conteos[categoria.id] || 0,
-    totalOperacion: conteos[categoria.id] || 0,
+    registrados: Object.values(conteos[categoria.id]).reduce((acc, total) => acc + total, 0),
+    operacion: conteos[categoria.id].operacion,
+    resguardo: conteos[categoria.id].resguardo,
+    mantenimiento: conteos[categoria.id].mantenimiento,
+    baja: conteos[categoria.id].baja,
+    totalOperacion: conteos[categoria.id].operacion,
   }));
 };
 
 const construirResumen = (detalle) => {
   const normalizado = detalle.map((item) => {
     const registrados = Number(item.registrados || 0);
-    const totalOperacion = Math.max(Number(item.totalOperacion || 0), registrados);
+    const operacion = Number(item.operacion || 0);
+    const resguardo = Number(item.resguardo || 0);
+    const mantenimiento = Number(item.mantenimiento || 0);
+    const baja = Number(item.baja || 0);
+    const totalOperacion = Math.max(Number(item.totalOperacion || 0), operacion);
 
     return {
       id: item.id,
       nombre: item.nombre,
       registrados,
+      operacion,
+      resguardo,
+      mantenimiento,
+      baja,
       totalOperacion,
-      faltantes: Math.max(totalOperacion - registrados, 0),
+      faltantes: Math.max(totalOperacion - operacion, 0),
     };
   });
   const totalRegistrados = normalizado.reduce((acc, item) => acc + item.registrados, 0);
+  const totalEnOperacion = normalizado.reduce((acc, item) => acc + item.operacion, 0);
+  const totalResguardo = normalizado.reduce((acc, item) => acc + item.resguardo, 0);
+  const totalMantenimiento = normalizado.reduce((acc, item) => acc + item.mantenimiento, 0);
+  const totalBaja = normalizado.reduce((acc, item) => acc + item.baja, 0);
   const totalOperacion = normalizado.reduce((acc, item) => acc + item.totalOperacion, 0);
   const porcentajeInventario = totalOperacion ? Number(((totalRegistrados / totalOperacion) * 100).toFixed(2)) : 0;
 
-  return { detalle: normalizado, totalRegistrados, totalOperacion, porcentajeInventario };
+  return {
+    detalle: normalizado,
+    totalRegistrados,
+    totalEnOperacion,
+    totalResguardo,
+    totalMantenimiento,
+    totalBaja,
+    totalOperacion,
+    porcentajeInventario,
+  };
 };
 
 export const previsualizarInventarioEquipos = async (req, res) => {
@@ -88,7 +129,7 @@ export const previsualizarInventarioEquipos = async (req, res) => {
       const guardado = detalleGuardado.find((detalleItem) => detalleItem.id === item.id);
       return {
         ...item,
-        totalOperacion: Math.max(Number(guardado?.totalOperacion || item.totalOperacion), item.registrados),
+        totalOperacion: Math.max(Number(guardado?.totalOperacion || item.totalOperacion), item.operacion),
       };
     });
 
@@ -107,7 +148,7 @@ export const guardarCierreInventarioEquipos = async (req, res) => {
       const recibido = detallePayload.find((detalleItem) => detalleItem.id === item.id);
       return {
         ...item,
-        totalOperacion: Math.max(Number(recibido?.totalOperacion || item.totalOperacion), item.registrados),
+        totalOperacion: Math.max(Number(recibido?.totalOperacion || item.totalOperacion), item.operacion),
       };
     });
     const resumen = construirResumen(detalle);
